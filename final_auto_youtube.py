@@ -21,13 +21,13 @@ SCOPES = [
 ]
 
 BEST_TIMINGS = {
-    0: ["12:45", "20:15"],  # Monday
-    1: ["13:10", "21:05"],  # Tuesday
-    2: ["11:55", "20:40"],  # Wednesday
-    3: ["12:30", "21:20"],  # Thursday
-    4: ["13:00", "21:45"],  # Friday
-    5: ["11:30", "22:15"],  # Saturday
-    6: ["12:15", "20:50"],  # Sunday
+    0: ["12:45", "20:15"],
+    1: ["13:10", "21:05"],
+    2: ["11:55", "20:40"],
+    3: ["12:30", "21:20"],
+    4: ["13:00", "21:45"],
+    5: ["11:30", "22:15"],
+    6: ["12:15", "20:50"],
 }
 
 # ===========================================
@@ -39,6 +39,7 @@ def log(msg):
 
 def authenticate():
     creds = None
+
     if os.path.exists("token.pickle"):
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
@@ -82,15 +83,10 @@ def get_uploaded_folder(drive):
     return folder["id"]
 
 
-def pick_random_video(drive):
+def get_all_videos(drive):
     query = f"'{DRIVE_FOLDER_ID}' in parents and mimeType contains 'video/'"
     results = drive.files().list(q=query, fields="files(id,name)").execute()
-    files = results.get("files", [])
-
-    if not files:
-        raise Exception("No videos left in Drive folder.")
-
-    return random.choice(files)
+    return results.get("files", [])
 
 
 def download_video(drive, file_id, file_name):
@@ -107,7 +103,12 @@ def download_video(drive, file_id, file_name):
 
 def move_to_uploaded(drive, file_id, uploaded_folder_id):
     file = drive.files().get(fileId=file_id, fields="parents").execute()
-    previous_parents = ",".join(file.get("parents"))
+    parents = file.get("parents", [])
+
+    if isinstance(parents, list):
+        previous_parents = ",".join(parents)
+    else:
+        previous_parents = ""
 
     drive.files().update(
         fileId=file_id,
@@ -119,6 +120,7 @@ def move_to_uploaded(drive, file_id, uploaded_folder_id):
 def schedule_time(slot_time):
     now = datetime.datetime.now()
     hour, minute = map(int, slot_time.split(":"))
+
     scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     if scheduled <= now:
@@ -171,8 +173,15 @@ def main():
         today_index = datetime.datetime.now().weekday()
         slots = BEST_TIMINGS[today_index]
 
-        for slot in slots:
-            video = pick_random_video(drive)
+        all_videos = get_all_videos(drive)
+
+        if len(all_videos) < len(slots):
+            raise Exception("Not enough videos in Drive folder.")
+
+        random.shuffle(all_videos)
+        selected_videos = all_videos[:len(slots)]
+
+        for slot, video in zip(slots, selected_videos):
             file_id = video["id"]
             file_name = video["name"]
 
@@ -188,7 +197,7 @@ def main():
             move_to_uploaded(drive, file_id, uploaded_folder_id)
             os.remove(file_name)
 
-        log("✅ Two videos scheduled successfully.")
+        log("✅ All videos scheduled successfully.")
 
     except Exception as e:
         log(f"ERROR: {e}")
@@ -197,8 +206,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
